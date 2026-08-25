@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,13 @@ import (
 	"chemicalprocessdcs/internal/param"
 	"chemicalprocessdcs/internal/record"
 )
+
+// notFound reports whether err is the reactor-not-found error returned when a
+// reactor id has not been profiled/registered yet. The interlock scan treats
+// such ids as "skip this reactor" rather than a hard failure.
+func notFound(err error) bool {
+	return errors.Is(err, model.ErrReactorNotFound)
+}
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.journal.AppendEvent(model.NewEvent("system", "health", "ping", time.Now().UTC()))
@@ -106,6 +114,10 @@ func (s *Server) handleReactor(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "reading set"})
 		case "step":
 			if err := s.reactor.Step(id); err != nil {
+				if notFound(err) {
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+					return
+				}
 				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 				return
 			}
@@ -116,6 +128,10 @@ func (s *Server) handleReactor(w http.ResponseWriter, r *http.Request) {
 			}
 			statuses, err := s.reactor.Simulate(id, body.Steps)
 			if err != nil {
+				if notFound(err) {
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+					return
+				}
 				writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 				return
 			}

@@ -70,7 +70,7 @@ func (s *Service) Get(id string) (*model.Reactor, error) {
 	defer s.mu.Unlock()
 	r, ok := s.reactors[id]
 	if !ok {
-		return nil, nil
+		return nil, model.ErrReactorNotFound
 	}
 	return r, nil
 }
