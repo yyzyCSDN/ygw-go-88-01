@@ -1,0 +1,39 @@
+﻿package alarm
+
+import (
+	"sync"
+	"time"
+
+	"chemicalprocessdcs/internal/esd"
+	"chemicalprocessdcs/internal/model"
+)
+
+type Service struct {
+	mu       sync.Mutex
+	alarms   map[string]model.Alarm
+	esd      *esd.Service
+	snapshot map[string]bool
+	history  []HistoryEntry
+}
+
+func NewService(esdSvc *esd.Service) *Service {
+	return &Service{
+		alarms:   make(map[string]model.Alarm),
+		esd:      esdSvc,
+		snapshot: make(map[string]bool),
+	}
+}
+
+func (s *Service) ReportTrip(id string, err error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err != nil {
+		s.alarms[id] = model.Alarm{ReactorID: id, Level: "warning", Message: "trip action failed", Active: true}
+		s.appendHistoryLocked(HistoryEntry{ReactorID: id, Level: "warning", Message: "trip action failed", At: time.Now().UTC()})
+		return err
+	}
+	s.alarms[id] = model.Alarm{ReactorID: id, Level: "critical", Message: "reactor tripped", Active: true}
+	s.appendHistoryLocked(HistoryEntry{ReactorID: id, Level: "critical", Message: "reactor tripped", At: time.Now().UTC()})
+	return nil
+}
+

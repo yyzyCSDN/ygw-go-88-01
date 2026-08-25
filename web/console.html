@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChemicalProcessDCS 控制台</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; color: #1f2937; }
+    h1 { font-size: 1.5rem; }
+    .panel { border: 1px solid #d1d5db; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+    button { padding: 0.4rem 0.8rem; margin-right: 0.5rem; }
+    .row { display: flex; gap: 0.5rem; margin: 0.5rem 0; }
+    input { padding: 0.35rem; }
+    pre { background: #f3f4f6; padding: 1rem; border-radius: 6px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>ChemicalProcessDCS 联锁控制台</h1>
+  <div class="panel">
+    <div class="row">
+      <input id="reactorId" placeholder="反应釜编号，如 R1" value="R1">
+      <button onclick="action('register')">登记</button>
+      <button onclick="action('step')">执行一步</button>
+      <button onclick="action('trip')">紧急停车</button>
+      <button onclick="action('restore')">恢复</button>
+    </div>
+    <div class="row">
+      <input id="temperature" placeholder="温度" value="120">
+      <input id="pressure" placeholder="压力" value="4.0">
+      <button onclick="action('reading')">下发读数</button>
+      <button onclick="loadReactor()">查询</button>
+    </div>
+    <pre id="result">尚未执行操作</pre>
+  </div>
+  <script>
+    async function action(kind) {
+      const id = document.getElementById("reactorId").value;
+      if (kind === "register") {
+        await post("/api/v1/reactors/" + id, { action: "register" });
+        return;
+      }
+      if (kind === "step") {
+        await post("/api/v1/reactors/" + id, { action: "step" });
+        return;
+      }
+      if (kind === "reading") {
+        const temperature = parseFloat(document.getElementById("temperature").value);
+        const pressure = parseFloat(document.getElementById("pressure").value);
+        await post("/api/v1/reactors/" + id, { action: "reading", temperature: temperature, pressure: pressure });
+        return;
+      }
+      if (kind === "trip") {
+        await post("/api/v1/esd/trip", { reactor_id: id });
+        return;
+      }
+      if (kind === "restore") {
+        await post("/api/v1/alarms/restore", { reactor_id: id });
+        return;
+      }
+    }
+    async function loadReactor() {
+      const id = document.getElementById("reactorId").value;
+      const resp = await fetch("/api/v1/reactors/" + id);
+      const data = await resp.json();
+      document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+    }
+    async function post(url, body) {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
