@@ -151,6 +151,15 @@ func (s *Service) SyncCurve() {
 func (s *Service) FeedTarget() float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.feedTargetLocked()
+}
+
+// feedTargetLocked reads the main feed target without taking s.mu, so it is
+// safe to call from Batch/BatchComplete which already hold the lock. Calling
+// FeedTarget there would re-lock s.mu and self-deadlock (sync.Mutex is not
+// reentrant), which deadlocks the per-reactor monitoring goroutine and drops
+// the run-log record it was about to write.
+func (s *Service) feedTargetLocked() float64 {
 	params, ok := s.store.Params("main")
 	if !ok {
 		return 0

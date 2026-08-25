@@ -11,7 +11,10 @@ func (s *Service) validateReactor(r *model.Reactor, params model.ProcessParams) 
 		return model.ErrReactorNotFound
 	}
 	if r.Temperature > s.maxTemp || r.Pressure > s.maxPressure {
-		s.reasons[r.ID] = s.reasonFor(r, s.maxTemp, s.maxPressure)
+		reason := s.reasonFor(r, s.maxTemp, s.maxPressure)
+		s.mu.Lock()
+		s.reasons[r.ID] = reason
+		s.mu.Unlock()
 		return s.Trip(r.ID)
 	}
 	if r.Pressure > params.TargetPressure && r.State == model.ReactorReacting {
