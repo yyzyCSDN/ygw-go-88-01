@@ -56,10 +56,14 @@ func NewService(
 }
 
 func (s *Service) Register(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.reactors[id]; ok {
 		return
 	}
 	s.reactors[id] = &model.Reactor{ID: id, State: model.ReactorIdle}
+	// feed.Register takes its own lock; lock order is reactor.mu -> feed.mu,
+	// which is already established by LoadState, so there is no deadlock.
 	s.feed.Register(id)
 }
 

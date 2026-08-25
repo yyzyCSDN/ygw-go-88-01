@@ -20,24 +20,24 @@ type Service struct {
 	index      int
 	cascadeMap map[string]Cascade
 	history    []ConfirmationRecord
-	snapshot   map[string]model.FeedState
 	confirm    func(ctx context.Context, id string) (model.FeedConfirmation, error)
 	now        func() time.Time
 }
 
 func NewService(store *param.Store, confirm func(ctx context.Context, id string) (model.FeedConfirmation, error)) *Service {
 	return &Service{
-		state:    make(map[string]model.FeedState),
-		amount:   make(map[string]float64),
-		snapshot: make(map[string]model.FeedState),
-		timeout:  time.Duration(model.DefaultControlConfig().FeedTimeout) * time.Second,
-		store:    store,
-		confirm:  confirm,
-		now:      time.Now,
+		state:   make(map[string]model.FeedState),
+		amount:  make(map[string]float64),
+		timeout: time.Duration(model.DefaultControlConfig().FeedTimeout) * time.Second,
+		store:   store,
+		confirm: confirm,
+		now:     time.Now,
 	}
 }
 
 func (s *Service) Register(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.state[id]; !ok {
 		s.state[id] = model.FeedIdle
 		s.amount[id] = 0
@@ -47,7 +47,7 @@ func (s *Service) Register(id string) {
 func (s *Service) RegisteredCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.snapshot)
+	return len(s.state)
 }
 
 func (s *Service) Start(id string) error {
