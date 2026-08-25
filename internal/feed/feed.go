@@ -16,7 +16,11 @@ type Service struct {
 	timeout    time.Duration
 	store      *param.Store
 	curveGen   uint64
+	// seq is the currently active process sequence. It is only mutated while
+	// holding mu, so every reader that observes it under mu sees one coherent,
+	// fully built version — never a half-published mix of two sequences.
 	seq        []param.SequenceEntry
+	curveID    string
 	index      int
 	cascadeMap map[string]Cascade
 	history    []ConfirmationRecord
@@ -127,23 +131,43 @@ func (s *Service) State(id string) model.FeedState {
 	return s.state[id]
 }
 
+// SyncCurve rebuilds the local sequence from the store's current curve. The
+// build (params/curve lookup + BuildSequence) and the publication of the new
+// seq happen atomically under s.mu, so a consumer can never read a sequence
+// that is half-old / half-new.
 func (s *Service) SyncCurve() {
-	gen := s.store.Generation()
-	if gen == s.curveGen {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.syncCurveLocked()
+}
+
+// syncCurveLocked is the lock-held implementation of SyncCurve.
+func (s *Service) syncCurveLocked() {
+	// Read the generation, the params, and the referenced curve from the store
+	// as one atomic snapshot (a single store-level lock acquisition). This is
+	// the fix for the curve-switch race: previously Generation, Params and
+	// Curve were three separate lock acquisitions, so a concurrent curve
+	// switch (SetParams/SetCurve bumping the generation) could interleave them
+	// and BuildSequence would be fed old params stitched to a new curve (or
+	// the reverse) — half-old / half-new steps. The snapshot guarantees the
+	// params and curve always belong to the same store version, so the rebuilt
+	// sequence is one complete, coherent version. The cursor is reset
+	// together with the sequence under the same lock, so index and seq are
+	// never split across two versions either.
+	snap := s.store.CurveSnapshot("main", s.curveGen)
+	if snap.Unchanged {
 		return
 	}
-	s.curveGen = gen
-	params, ok := s.store.Params("main")
-	if !ok {
+	s.curveGen = snap.Gen
+	if !snap.OK {
 		s.seq = nil
+		s.curveID = ""
+		s.index = 0
 		return
 	}
-	curve, ok := s.store.Curve(params.CurveID)
-	if !ok {
-		s.seq = nil
-		return
-	}
-	s.seq = param.BuildSequence(curve)
+	s.seq = param.BuildSequence(snap.Curve)
+	s.curveID = snap.Curve.ID
+	s.index = 0
 }
 
 func (s *Service) FeedTarget() float64 {
@@ -156,8 +180,25 @@ func (s *Service) FeedTarget() float64 {
 	return params.FeedTarget
 }
 
+// StepAt returns the entry at index, taken from a coherent snapshot of the
+// active sequence. The read happens entirely under s.mu, so it never straddles
+// a SyncCurve replacement.
 func (s *Service) StepAt(index int) (param.SequenceEntry, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.syncCurveLocked()
 	return param.CurrentStep(s.seq, index)
+}
+
+// Progress returns the active curve id, the feed cursor and the active
+// sequence length together, taken under a single acquisition of s.mu and
+// from one coherent version of the sequence (after syncCurveLocked). Callers
+// that derive state from (curveID, index, length) — e.g. a "complete" check of
+// index >= length — are therefore guaranteed the three values belong to the
+// same version and never straddle a curve switch.
+func (s *Service) Progress() (curveID string, index int, length int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.syncCurveLocked()
+	return s.curveID, s.index, len(s.seq)
 }

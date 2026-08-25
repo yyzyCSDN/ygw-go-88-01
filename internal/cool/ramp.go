@@ -12,11 +12,12 @@ func CoolingRampTarget(current float64, target float64, step int) float64 {
 }
 
 func (s *Service) RampTo(target float64, steps int) float64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Snapshot the sequence atomically so current is read from one coherent
+	// version even while SyncCurve may be replacing the active sequence.
+	seq, _ := s.snapshotSeq()
 	current := 0.0
-	if len(s.seq) > 0 {
-		current = s.seq[len(s.seq)-1].Temperature
+	if len(seq) > 0 {
+		current = seq[len(seq)-1].Temperature
 	}
 	return CoolingRampTarget(current, target, steps)
 }

@@ -1,4 +1,4 @@
-﻿package param
+package param
 
 import (
 	"encoding/json"
@@ -14,9 +14,10 @@ type PersistedStore struct {
 }
 
 func (s *Store) Save(path string) error {
+	s.mu.RLock()
 	payload := PersistedStore{
-		Params: make(map[string]model.ProcessParams),
-		Curves: make(map[string]model.Curve),
+		Params: make(map[string]model.ProcessParams, len(s.params)),
+		Curves: make(map[string]model.Curve, len(s.curves)),
 	}
 	for id, p := range s.params {
 		payload.Params[id] = p
@@ -24,6 +25,8 @@ func (s *Store) Save(path string) error {
 	for id, c := range s.curves {
 		payload.Curves[id] = c
 	}
+	s.mu.RUnlock()
+
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return err
@@ -43,6 +46,8 @@ func (s *Store) Load(path string) error {
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for id, p := range payload.Params {
 		s.params[id] = p
 	}
@@ -54,6 +59,8 @@ func (s *Store) Load(path string) error {
 }
 
 func (s *Store) AllCurves() map[string]model.Curve {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make(map[string]model.Curve, len(s.curves))
 	for id, c := range s.curves {
 		out[id] = c
