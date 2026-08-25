@@ -25,9 +25,15 @@ func NewService(esdSvc *esd.Service) *Service {
 }
 
 func (s *Service) ReportTrip(id string, err error) error {
-	_ = err
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// 停车失败时给出明确的失败告警，避免与"已停车"混淆。
+	if err != nil {
+		msg := "reactor trip failed: " + err.Error()
+		s.alarms[id] = model.Alarm{ReactorID: id, Level: "critical", Message: msg, Active: true}
+		s.appendHistoryLocked(HistoryEntry{ReactorID: id, Level: "critical", Message: msg, At: time.Now().UTC()})
+		return nil
+	}
 	s.alarms[id] = model.Alarm{ReactorID: id, Level: "critical", Message: "reactor tripped", Active: true}
 	s.appendHistoryLocked(HistoryEntry{ReactorID: id, Level: "critical", Message: "reactor tripped", At: time.Now().UTC()})
 	return nil

@@ -65,13 +65,24 @@
       document.getElementById("result").textContent = JSON.stringify(data, null, 2);
     }
     async function post(url, body) {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
-      document.getElementById("result").textContent = JSON.stringify(data, null, 2);
+      const result = document.getElementById("result");
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        // 非 2xx 视为操作失败：明确提示停车失败并保留原始报错，可重试。
+        if (!resp.ok) {
+          const msg = (data && data.error) ? data.error : ("HTTP " + resp.status);
+          result.textContent = "操作失败（可重试）：" + msg;
+          return;
+        }
+        result.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        result.textContent = "操作失败（可重试）：" + e.message;
+      }
     }
   </script>
 </body>
